@@ -4,7 +4,7 @@
 #    content - the actual string message
 #    relativePath - path to the file where the message should be posted; the path should be relative to the repo root
 #    line - where the message should be posted in the file
-#    priority - used to filter out message if there are too mHasElements of them so as to not overwhelm the user
+#    priority - used to filter out message if there are too many of them so as to not overwhelm the user
 #         
 # Comment or DiscussionComment - TFS data structure that describes the comment. Has properties such as content or state (e.g. Active, Resolved) 
 # Thread or DiscussionThread - TFS data structure that encapsulates a collection of comments. Threads have properties such as Path
@@ -54,7 +54,6 @@ $script:artifactUri = $null
 
 $script:messageSource = $null
 $script:messageToCommentListMap = $null
-$script:resolvedComment = $null
 #endregion
 
 #region Public
@@ -64,13 +63,11 @@ $script:resolvedComment = $null
 #
 # Posts new messages, ignoring duplicate comments and resolves comments that were open in an old iteration of the PR.
 # Comment source is used to decorate comments created by this logic. Only comments with the same source will be resolved.
-# The "resolvedCommentString" is added to a comment that gets resolved.
 function PostAndResolveComments
 {
-    param ([Array][ValidateNotNull()]$messages, [string][ValidateNotNullOrEmpty()]$messageSource, [string][ValidateNotNullOrEmpty()]$resolvedCommentString)
+    param ([Array][ValidateNotNull()]$messages, [string][ValidateNotNullOrEmpty()]$messageSource)
     
     $script:messageSource = $messageSource
-    $script:resolvedComment = $resolvedCommentString
     
     ValidateMessages $messages    
     Write-Host "Processing $($messages.Count) new messages"        
@@ -99,7 +96,6 @@ function InternalPostAndResolveComments
     
     Write-Verbose "Fetching existing threads and comments..."
     
-    # TODO: are these needed here or can the build dictionary fetch them? 
     $existingThreads = FetchActiveDiscussionThreads 
     $existingComments = FetchDiscussionComments $existingThreads    
 
@@ -156,33 +152,18 @@ function ResolveExistingComments
         
         Assert ($thread -ne $null) "An existing comment should belong to a thread"
         
-        # the resolving comment is a new comment that markes the thread as resolved when pushed to the server
-        $resolvingComment = MarkThreadAsResolved $thread
-        
-        Write-host "1"
-        $script:discussionClient.AddCommentAsync($resolvingComment, $resolvingComment.DiscussionId, $null, [System.Threading.CancellationToken]::None).Wait();
-        Write-host "2"
-        $script:discussionClient.UpdateThreadAsync($thread, $thread.DiscussionId, $null, [System.Threading.CancellationToken]::None).Wait();
-        Write-host "3"
+        MarkThreadAsFixed $thread
     }
 }
 
-function MarkThreadAsResolved
+function MarkThreadAsFixed
 {
     param([Microsoft.VisualStudio.Services.CodeReview.Discussion.WebApi.DiscussionThread]$thread)
      
     $thread.Status = [Microsoft.VisualStudio.Services.CodeReview.Discussion.WebApi.DiscussionStatus]::Fixed
     $thread.IsDirty = $true
-    $resolvingComment = New-Object "Microsoft.VisualStudio.Services.CodeReview.Discussion.WebApi.DiscussionComment"
-                        
-    $resolvingComment.DiscussionId = $thread.DiscussionId
-    $resolvingComment.CommentId = -1
-    $resolvingComment.CommentType = [Microsoft.VisualStudio.Services.CodeReview.Discussion.WebApi.CommentType]::System
-    $resolvingComment.PublishedDate = [System.DateTime]::Now
-    $resolvingComment.IsDeleted = $false    
-    $resolvingComment.Content = $script:resolvedComment
     
-    return $resolvingComment
+    $script:discussionClient.UpdateThreadAsync($thread, $thread.DiscussionId, $null, [System.Threading.CancellationToken]::None).Wait();  
 }
 
 function GetParentThread
@@ -281,7 +262,7 @@ function FilterPreExistingComments
      return $messages
 }
 
-# Limit the number of messages so as to not overload the PR with too mHasElements comments
+# Limit the number of messages so as to not overload the PR with too many comments
 function FilterMessagesByNumber
 {
     param ([Array]$messages)
@@ -320,7 +301,7 @@ function BuildMessageToCommentDictonary
      [System.Collections.Generic.List[Microsoft.VisualStudio.Services.CodeReview.Discussion.WebApi.DiscussionThread]]$existingThreads,
      [System.Collections.Generic.List[Microsoft.VisualStudio.Services.CodeReview.Discussion.WebApi.DiscussionComment]]$existingComments)
      
-     # reset HasElements previous map
+     # reset any previous map
      $script:messageToCommentListMap = @{}
      
      $sw = new-object "Diagnostics.Stopwatch"
@@ -352,12 +333,11 @@ function GetMatchingComments
      # select threads that are not "fixed", that point to the same file and have been marked with the given comment source
      $matchingThreads = $existingThreads | Where-Object {
             ($_ -ne $null) -and
+            ($_.Status -ne [Microsoft.VisualStudio.Services.CodeReview.Discussion.WebApi.DiscussionStatus]::Fixed) -and
             (ThreadMatchesCommentSource $_ $script:messageSource) -and
-            (ThreadMatchesItemPath $_ $message.RelativePath) -and 
-            ($_.Status -ne [Microsoft.VisualStudio.Services.CodeReview.Discussion.WebApi.DiscussionStatus]::Fixed)}
+            (ThreadMatchesItemPath $_ $message.RelativePath)}
 
-     #TODO: verbose            
-     Write-Host "Found $($matchingThreads.Count) matching thread(s) for the message at $($message.RelativePath) line $($message.Line)"
+     Write-Verbose "Found $($matchingThreads.Count) matching thread(s) for the message at $($message.RelativePath) line $($message.Line)"
         
      foreach ($matchingThread in $matchingThreads)
      {
@@ -381,8 +361,6 @@ function GetMatchingComments
         
      return $resultList
 }
-
-
 
 #endregion
 

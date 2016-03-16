@@ -1,8 +1,6 @@
 [CmdletBinding()]
 param()
 
-
-
 #
 # The tests do not have access to the TFS client assemblies because those live only on the build agent. As such instead of mocking 
 # types such as DiscussionThread, these need to be completly replaced. Since the client API is binary compatible with future versions, this 
@@ -175,7 +173,7 @@ namespace Microsoft.VisualStudio.Services.CodeReview.Discussion.WebApi
             return tsc.Task;        
         }
         
- 
+        
           public Task<DiscussionComment> AddCommentAsync(DiscussionComment newComment, int discussionId, object userState = null, CancellationToken cancellationToken = default(CancellationToken))
             {
                 TaskCompletionSource<DiscussionComment> tsc = new TaskCompletionSource<DiscussionComment>();
@@ -191,6 +189,7 @@ namespace Microsoft.VisualStudio.Services.CodeReview.Discussion.WebApi
                 tsc.SetResult(newComment);
                 return tsc.Task;
             }
+           
             
            public Task<DiscussionThread> UpdateThreadAsync(DiscussionThread newThread, int discussionId, object userState = null, CancellationToken cancellationToken = default(CancellationToken))
             {
@@ -287,14 +286,13 @@ function ValidateDiscussionThreadCollection
     param (
         [Microsoft.VisualStudio.Services.CodeReview.Discussion.WebApi.DiscussionThreadCollection]$threadCollection,
         [Array]$messageStateArray,
-        [string]$commentSource, 
-        [string]$resolvedCommentContent)
+        [string]$commentSource)
     
     $endLineName = [Microsoft.VisualStudio.Services.CodeReview.Discussion.WebApi.DiscussionThreadPropertyNames]::EndLine
     $startLineName = [Microsoft.VisualStudio.Services.CodeReview.Discussion.WebApi.DiscussionThreadPropertyNames]::StartLine
     $itemPathName = [Microsoft.VisualStudio.Services.CodeReview.Discussion.WebApi.DiscussionThreadPropertyNames]::ItemPath
     
-    ValidateCommonThreadAttributes $threadCollection $commentSource $resolvedCommentContent
+    ValidateCommonThreadAttributes $threadCollection $commentSource
     
     foreach ($messageState in $messageStateArray)
     {
@@ -316,7 +314,7 @@ function ValidateDiscussionThreadCollection
 #
 function ValidateCommonThreadAttributes
 {
-    param ([Microsoft.VisualStudio.Services.CodeReview.Discussion.WebApi.DiscussionThreadCollection]$threadCollection, [string]$commentSource, [string]$resolvedCommentContent)
+    param ([Microsoft.VisualStudio.Services.CodeReview.Discussion.WebApi.DiscussionThreadCollection]$threadCollection, [string]$commentSource)
     
     $startColumnName = [Microsoft.VisualStudio.Services.CodeReview.Discussion.WebApi.DiscussionThreadPropertyNames]::StartColumn
     $positionContextName = [Microsoft.VisualStudio.Services.CodeReview.Discussion.WebApi.DiscussionThreadPropertyNames]::PositionContext
@@ -335,11 +333,7 @@ function ValidateCommonThreadAttributes
     $fixedThreads = $threadCollection | Where-Object {$_.Status -eq "Fixed"}
     foreach ($fixedThread in $fixedThreads)
     {
-        Assert-AreEqual 2 $fixedThread.Comments.Count "Fixed threads should have 2 comments - the original one and a reason why it was fixed"
-        $fixedComment = $fixedThread.Comments | Where-Object {$_.Content -eq $resolvedCommentContent}
-        
-        Assert-AreEqual 1 $fixedComment.Count "Could not find a thread with the $resolvedCommentContent content"
-        Assert-AreEqual "System" $fixedComment.CommentType "The fixed comment should be a system comment" 
+        Assert-AreEqual 1 $fixedThread.Comments.Count "Fixed threads should have only the original comment"
     }
 }
 
@@ -379,12 +373,12 @@ $p2B = BuildTestMessage "B" 15 "some/path2/file.cs" 5
 $messageFromOtherFile = BuildTestMessage "C" 15 "some/path3/file.cs" 5  # issue in a file not changed by the PR so it should be ignored
 
 # Act
-PostAndResolveComments @($p1A, $p2B, $messageFromOtherFile) "TestSource" "Resolved by PRCA"
+PostAndResolveComments @($p1A, $p2B, $messageFromOtherFile) "TestSource"
 
 # Assert
 $postedThreads = $mockDiscussionClient.GetPostedThreads()
 # GetExpectedMessageState params: the message itself, the number of matching comments, the state of those comments
-ValidateDiscussionThreadCollection $postedThreads @((GetExpectedMessageState $p1a 1 "Active"), (GetExpectedMessageState $p2B 1 "Active")) "TestSource" "Resolved by PRCA"
+ValidateDiscussionThreadCollection $postedThreads @((GetExpectedMessageState $p1a 1 "Active"), (GetExpectedMessageState $p2B 1 "Active")) "TestSource" 
 
 # Iteration 2: post the same message and check that new comments are not created 
 # - Current state:                      path1:A, path2:B
@@ -396,11 +390,11 @@ $p1ABis = BuildTestMessage "A" 18 "some/path1/file.cs" 1  # same as p1A but on a
 $p2B = BuildTestMessage "B" 14 "some/path2/file.cs" 1  # same message as comment 1 but different file
 
 # Act 
-PostAndResolveComments @($p1A, $p1ABis, $p2B) "TestSource" "Resolved by PRCA"
+PostAndResolveComments @($p1A, $p1ABis, $p2B) "TestSource"
 
 # Assert
 $postedThreads = $mockDiscussionClient.GetPostedThreads()
-ValidateDiscussionThreadCollection $postedThreads @( (GetExpectedMessageState $p1A 1 "Active") , (GetExpectedMessageState $p2B 1 "Active") ) "TestSource" "Resolved by PRCA"
+ValidateDiscussionThreadCollection $postedThreads @( (GetExpectedMessageState $p1A 1 "Active") , (GetExpectedMessageState $p2B 1 "Active") ) "TestSource"
 
 
 # Iteration 3: 
@@ -411,11 +405,11 @@ ValidateDiscussionThreadCollection $postedThreads @( (GetExpectedMessageState $p
 $p1A = BuildTestMessage "A" 24 "some/path1/file.cs" 1  # same message as message1 and the same line
 
 # Act
-PostAndResolveComments @($p1A) "TestSource" "Resolved by PRCA"
+PostAndResolveComments @($p1A) "TestSource"
 
 # Assert
 $postedThreads = $mockDiscussionClient.GetPostedThreads()
-ValidateDiscussionThreadCollection $postedThreads @( (GetExpectedMessageState $p1A 1 "Active") , (GetExpectedMessageState $p2B 1 "Fixed") ) "TestSource" "Resolved by PRCA"
+ValidateDiscussionThreadCollection $postedThreads @( (GetExpectedMessageState $p1A 1 "Active") , (GetExpectedMessageState $p2B 1 "Fixed") ) "TestSource"
 
 
 # Iteration 4: 
@@ -427,13 +421,13 @@ $p1C50 = BuildTestMessage "C" 50 "some/path1/file.cs" 1
 $p1C60 = BuildTestMessage "C" 60 "some/path1/file.cs" 1
 
 # Act
-PostAndResolveComments @($p1C50, $p1C60) "TestSource" "Resolved by PRCA"
+PostAndResolveComments @($p1C50, $p1C60) "TestSource"
 
 # Assert
 $postedThreads = $mockDiscussionClient.GetPostedThreads()
 $expectedComments = @( (GetExpectedMessageState $p1C50 2 "Active"), (GetExpectedMessageState $p1A 1 "Fixed"), (GetExpectedMessageState $p2B 1 "Fixed") )
 
-ValidateDiscussionThreadCollection $postedThreads $expectedComments "TestSource" "Resolved by PRCA"
+ValidateDiscussionThreadCollection $postedThreads $expectedComments "TestSource"
 
 # Iteration 5: 
 # - Current state:                      path1:A (resolved), path2:B (resolved),  path1:C:50,  path1:C:60
@@ -442,13 +436,13 @@ ValidateDiscussionThreadCollection $postedThreads $expectedComments "TestSource"
  
 
 # Act
-PostAndResolveComments @() "TestSource" "Resolved by PRCA"
+PostAndResolveComments @() "TestSource"
 
 # Assert
 $postedThreads = $mockDiscussionClient.GetPostedThreads()
 $expectedComments = @( (GetExpectedMessageState $p1C50 2 "Fixed"), (GetExpectedMessageState $p1A 1 "Fixed"), (GetExpectedMessageState $p2B 1 "Fixed") )
 
-ValidateDiscussionThreadCollection $postedThreads $expectedComments "TestSource" "Resolved by PRCA"
+ValidateDiscussionThreadCollection $postedThreads $expectedComments "TestSource"
 
 
 

@@ -17,7 +17,7 @@ function HandleCodeAnalysisReporting
         InitPostCommentsModule $vssConnection
         $comments = GetCommentsFromIssues $newIssues
         
-        PostAndResolveComments $comments "SonarQube Code Analysis" "This code analysis issue was resolved by recent changes"
+        PostAndResolveComments $comments "SonarQube Code Analysis" 
     }	
 }
 
