@@ -54,6 +54,11 @@ $script:artifactUri = $null
 
 $script:messageSource = $null
 $script:messageToCommentListMap = $null
+
+$script:addedCommentCount = 0
+$script:resolvedCommentCount = 0
+$script:skippedMessageCount = 0
+
 #endregion
 
 #region Public
@@ -94,6 +99,11 @@ function InternalPostAndResolveComments
 {
     param ([ValidateNotNull()][Array]$messages, [string][ValidateNotNullOrEmpty()]$messageSource)
     
+    # reset the counters
+    $script:addedCommentCount = 0
+    $script:resolvedCommentCount = 0
+    $script:skippedMessageCount = 0
+
     Write-Verbose "Fetching existing threads and comments..."
     
     $existingThreads = FetchActiveDiscussionThreads 
@@ -118,8 +128,12 @@ function InternalPostAndResolveComments
          # Debug: print remaining messages 
         $remainingMessages | ForEach {Write-Verbose $_} 
         
+        $script:addedCommentCount = $remainingMessages.Count
+        
         $newDiscussionThreads = CreateDiscussionThreads $remainingMessages
         PostDiscussionThreads $newDiscussionThreads 
+        
+        PostSummaryComment
     }
     else
     {
@@ -145,6 +159,7 @@ function ResolveExistingComments
     # Comments that do not match HasElements input messages are said to be resolved
     $resolvedComments = GetResolvedComments $existingComments
     Write-Verbose "Found $($resolvedComments.Count) existing comments that do not match any new message and can be resolved"
+    $script:resolvedCommentCount = $resolvedComments.Count
     
     foreach ($resolvedComment in $resolvedComments)
     {
@@ -287,6 +302,8 @@ function FilterMessagesByNumber
     $commentsFiltered = $countBefore - $messages.Count
     
     Write-Host "$commentsFiltered message(s) were filtered to match the maximum $PostCommentsModule_MaxMessagesToPost comments limit"
+    
+    $script:skippedMessageCount = $commentsFiltered
     
     return $messages
 }
@@ -479,6 +496,68 @@ function AddLegacyProperties
         "RightBuffer")
 }
 
+#region Summary Comment
+
+
+function PostSummaryComment
+{
+    $content = GetSummaryCommentContent
+    Write-Host $content
+    
+      $newThread = New-Object "$script:discussionWebApiNS.ArtifactDiscussionThread"
+      $newThread.DiscussionId = -1
+      $newThread.ArtifactUri = $script:artifactUri        
+        
+      $discussionComment = New-Object "$script:discussionWebApiNS.DiscussionComment"
+      $discussionComment.CommentId = -1
+      $discussionComment.CommentType = [Microsoft.VisualStudio.Services.CodeReview.Discussion.WebApi.CommentType]::System
+      $discussionComment.IsDeleted = $false;
+      $discussionComment.Content = $content
+      $newThread.Comments = @($discussionComment)
+     
+      $discussionThreadCollection = New-Object "$script:discussionWebApiNS.DiscussionThreadCollection"
+      $discussionThreadCollection.Add($newThread)
+      
+      PostDiscussionThreads $newDiscussionThreads 
+}
+
+function GetSummaryCommentContent
+{
+    $addedFormat = "{0} added {1}."
+    $addedAndRemovedFormat = "{0} added {1} and fixed {2}."
+    $skippedFormat = "{1} ommitted to not post too many comments"
+    
+    $message = ""
+    if ($script:resolvedCommentCount -gt 0)
+    {
+        $message = [String]::Format($addedAndRemovedFormat, (GetCommentString $script:addedCommentCount), (GetCommentString $script:resolvedCommentCount))
+    }
+    else 
+    {
+        $message = [String]::Format($addedFormat, (GetCommentString $script:addedCommentCount))
+    }
+    
+    if ($script:skippedMessageCount -gt 0)
+    {
+        $message = $message + ( [String]::Format($skippedFormat, (GetCommentString $script:skippedMessageCount)))
+    }
+    
+    return $message
+}
+
+function GetCommentString
+{
+    param ([int]$count)
+    
+    if ($count -eq 1)
+    {
+        return "1 comment"
+    }
+    
+    return "$count comments"
+}
+
+#endregion
 
 #region Common Helpers 
 
