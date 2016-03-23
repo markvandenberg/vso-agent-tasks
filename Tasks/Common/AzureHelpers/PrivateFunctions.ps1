@@ -10,8 +10,10 @@
         $additional['Default'] = $true # The Default switch is required prior to 0.8.15.
     }
 
+    Write-Host "Select-AzureSubscription -SubscriptionId $SubscriptionId $(Format-Splat $additional)"
     $null = Select-AzureSubscription -SubscriptionId $SubscriptionId @additional
     if ($StorageAccount) {
+        Write-Host "Set-AzureSubscription -SubscriptionId $SubscriptionId -CurrentStorageAccountName $StorageAccount"
         Set-AzureSubscription -SubscriptionId $SubscriptionId -CurrentStorageAccountName $StorageAccount
     }
 }
@@ -25,6 +27,7 @@ function Set-CurrentAzureRMSubscription {
 
     $additional = @{ }
     if ($TenantId) { $additional['TenantId'] = $TenantId }
+    Write-Host "Select-AzureRMSubscription -SubscriptionId $SubscriptionId $(Format-Splat $additional)"
     $null = Select-AzureRMSubscription -SubscriptionId $SubscriptionId @additional
 }
 
@@ -37,9 +40,9 @@ function Initialize-AzureSubscription {
         [string]$StorageAccount)
 
     if ($Endpoint.Auth.Scheme -eq 'Certificate') {
+        # Certificate is only supported for the Azure module.
         if (!(Get-Module Azure)) {
-            # TODO: LOC
-            throw "Azure Powershell module is not found. Certificate based authentication is failed."
+            throw (Get-VstsLocString -Key AZ_CertificateAuthNotSupported)
         }
 
         $bytes = [System.Convert]::FromBase64String($Endpoint.Auth.Parameters.Certificate)
@@ -62,78 +65,75 @@ function Initialize-AzureSubscription {
             $additional['CurrentStorageAccountName'] = $StorageAccount
         }
 
+        Write-Host "Set-AzureSubscription -SubscriptionName $($Endpoint.Data.SubscriptionName) -SubscriptionId $($Endpoint.Data.SubscriptionId) -Certificate $certificate $(Format-Splat $additional)"
         Set-AzureSubscription -SubscriptionName $Endpoint.Data.SubscriptionName -SubscriptionId $Endpoint.Data.SubscriptionId -Certificate $certificate @additional
+        Write-Host "Set-CurrentAzureSubscription -SubscriptionId $($Endpoint.Data.SubscriptionId)"
         Set-CurrentAzureSubscription -SubscriptionId $Endpoint.Data.SubscriptionId
     } elseif ($Endpoint.Auth.Scheme -eq 'UserNamePassword') {
         $psCredential = New-Object System.Management.Automation.PSCredential(
             $Endpoint.Auth.Parameters.UserName,
             (ConvertTo-SecureString $Endpoint.Auth.Parameters.Password -AsPlainText -Force))
-        if (Get-Module Azure) {
-            $azureAccount = Add-AzureAccount -Credential $psCredential
-        }
+        if (Get-Module -Name Azure) {
+            try {
+                Write-Host "Add-AzureAccount -Credential $psCredential"
+                $null = Add-AzureAccount -Credential $psCredential
+            } catch {
+                # Provide an additional, custom, credentials-related error message.
+                Write-VstsTaskError -Message $_.Exception.Message
+                throw (New-Object System.Exception((Get-VstsLocString -Key AZ_CredentialsError), $_.Exception))
+            }
 
-        # TODO: Shouldn't this simply be "else"? By the time we get here, don't we know it's AzureRM?
-        # TODO: Why is -ListAvailable passed to Get-Module? Is module auto-loading being
-        # relied upon here to resolve the command Add-AzureRMAccount? If so, the required
-        # module should be explicitly imported instead.
-        if (Get-module -Name Azurerm.profile -ListAvailable) {
-            #  Write-Host "Add-AzureRMAccount -Credential `$psCredential"
-            $azureRMAccount = Add-AzureRMAccount -Credential $psCredential
-        }
-
-        # TODO: Would Add-AzureAccount/Add-AzureRMAccount generate an error? If so, passing "-ErrorAction Stop" would be better since it would already supply a meaningful error message and prevent further execution.
-        if (!$azureAccount -and !$azureRMAccount)
-        {
-            # TODO: LOC
-            throw "There was an error with the Azure credentials used for deployment."
-        }
-
-        # TODO: If Add-AzureAccount can be relied on to stop on failure, then this should move into the approriate IF block above.
-        if ($azureAccount) {
+            Write-Host "Set-CurrentAzureSubscription -SubscriptionId $($Endpoint.Data.SubscriptionId) -StorageAccount $StorageAccount"
             Set-CurrentAzureSubscription -SubscriptionId $Endpoint.Data.SubscriptionId -StorageAccount $StorageAccount
-        }
+        } else {
+            try {
+                Write-Host "Add-AzureRMAccount -Credential $psCredential"
+                $null = Add-AzureRMAccount -Credential $psCredential
+            } catch {
+                # Provide an additional, custom, credentials-related error message.
+                Write-VstsTaskError -Message $_.Exception.Message
+                throw (New-Object System.Exception((Get-VstsLocString -Key AZ_CredentialsError), $_.Exception))
+            }
 
-        # TODO: If Add-AzureRMAccount can be relied on to stop on failure, then this should move into the approriate IF block above.
-        if ($azureRMAccount) {
+            Write-Host "Set-CurrentAzureRMSubscription -SubscriptionId $($Endpoint.Data.SubscriptionId)"
             Set-CurrentAzureRMSubscription -SubscriptionId $Endpoint.Data.SubscriptionId
         }
     } elseif ($Endpoint.Auth.Scheme -eq 'ServicePrincipal') {
         $psCredential = New-Object System.Management.Automation.PSCredential(
             $Endpoint.Auth.Parameters.ServicePrincipalId,
             (ConvertTo-SecureString $Endpoint.Auth.Parameters.ServicePrincipalKey -AsPlainText -Force))
-        if ($script:azureModuleVersion -lt ([version]'0.9.9')) { # Shouldn't the condition be "-lt 1.0"?
-             $azureAccount = Add-AzureAccount -ServicePrincipal -Tenant $Endpoint.Auth.Parameters.TenantId -Credential $psCredential
-        } else {
-            # TODO: Shouldn't this simply be "else"? By the time we get here, don't we know it's AzureRM?
-            # TODO: Why is -ListAvailable passed to Get-Module? Is module auto-loading being
-            # relied upon here to resolve the command Add-AzureRMAccount? If so, the required
-            # module should be explicitly imported instead.
-            if (!(Get-module -Name Azurerm.profile -ListAvailable)) {
-                # TODO: LOC
-                throw "AzureRM Powershell module is not found. SPN based authentication is failed."
+        if ($script:azureModuleVersion -lt ([version]'0.9.9')) {
+            # Service principals arent supported from 0.9.9 and greater in the Azure module.
+            try {
+                Write-Host "Add-AzureAccount -ServicePrincipal -Tenant $($Endpoint.Auth.Parameters.TenantId) -Credential $psCredential"
+                $null = Add-AzureAccount -ServicePrincipal -Tenant $Endpoint.Auth.Parameters.TenantId -Credential $psCredential
+            } catch {
+                # Provide an additional, custom, credentials-related error message.
+                Write-VstsTaskError -Message $_.Exception.Message
+                throw (New-Object System.Exception((Get-VstsLocString -Key AZ_ServicePrincipalError), $_.Exception))
             }
 
-            $azureRMAccount = Add-AzureRMAccount -ServicePrincipal -Tenant $Endpoint.Auth.Parameters.TenantId -Credential $psCredential 
-        }
-
-        # TODO: Would Add-AzureAccount/Add-AzureRMAccount generate an error? If so, passing "-ErrorAction Stop" would be better since it would already supply a meaningful error message and prevent further execution.
-        if (!$azureAccount -and !$azureRMAccount) {
-            # TODO: LOC
-            throw "There was an error with the service principal used for deployment."
-        }
-
-        # TODO: If Add-AzureAccount generates an error on failure, then this should move into the approriate IF block above.
-        if ($azureAccount) {
+            Write-Host "Set-CurrentAzureSubscription -SubscriptionId $($Endpoint.Data.SubscriptionId) -StorageAccount $StorageAccount"
             Set-CurrentAzureSubscription -SubscriptionId $Endpoint.Data.SubscriptionId -StorageAccount $StorageAccount
-        }
+        } elseif (!(Get-module -Name AzureRM)) {
+            # Throw if >=0.9.9 Azure.
+            throw (Get-VstsLocString -Key "AZ_ServicePrincipalAuthNotSupportedAzureVersion0" -ArgumentList $script:azureModuleVersion)
+        } else {
+            # Else, this is AzureRM.
+            try {
+                Write-Host "Add-AzureRMAccount -ServicePrincipal -Tenant $($Endpoint.Auth.Parameters.TenantId) -Credential $psCredential"
+                $null = Add-AzureRMAccount -ServicePrincipal -Tenant $Endpoint.Auth.Parameters.TenantId -Credential $psCredential
+            } catch {
+                # Provide an additional, custom, credentials-related error message.
+                Write-VstsTaskError -Message $_.Exception.Message
+                throw (New-Object System.Exception((Get-VstsLocString -Key AZ_ServicePrincipalError), $_.Exception))
+            }
 
-        # TODO: If Add-AzureRMAccount generates an error on failure, then this should move into the approriate IF block above.
-        if ($azureRMAccount) {
+            Write-Host "Set-CurrentAzureRMSubscription -SubscriptionId $($Endpoint.Data.SubscriptionId) -TenantId $($Endpoint.Auth.Parameters.TenantId)"
             Set-CurrentAzureRMSubscription -SubscriptionId $Endpoint.Data.SubscriptionId -TenantId $Endpoint.Auth.Parameters.TenantId
         }
     } else {
-        # TODO: LOC
-        throw "Unsupported authorization scheme for azure endpoint = " + $Endpoint.Auth.Scheme
+        throw (Get-VstsLocString -Key AZ_UnsupportedAuthScheme0 -ArgumentList $Endpoint.Auth.Scheme)
     }
 }
 
@@ -143,26 +143,77 @@ function Import-AzureModule {
 
     Trace-VstsEnteringInvocation $MyInvocation
     try {
+        # Look for the Azure module in a well-known location.
+        $module = $null
         foreach ($programFiles in @(${env:ProgramFiles(x86)}, $env:ProgramFiles)) {
             if (!$programFiles) { continue }
             $path = [System.IO.Path]::Combine($programFiles, "Microsoft SDKs\Azure\PowerShell\ServiceManagement\Azure\Azure.psd1")
             if (Test-Path -LiteralPath $path -PathType Leaf) {
-                Write-Verbose "Importing '$psd1'."
-                Import-Module -Name $path -Global -PassThru -Verbose:$false
-                return
+                Write-Host "Import-Module -Name $path -Global"
+                $module = Import-Module -Name $path -Global -PassThru
+                break
             }
         }
 
-        foreach ($name in @('Azure', 'AzureRM')) {
-            if (Get-Module -Name $name -ListAvailable) {
-                Write-Verbose "Importing module '$name'."
-                Import-Module -Name $name -Global -PassThru -Verbose:$false
-                return
+        if (!$module) {
+            # Attempt to load the Azure/AzureRM module from the module path.
+            foreach ($name in @('Azure', 'AzureRM')) {
+                $module = Get-Module -Name $name -ListAvailable |
+                    Select-Object -First 1
+                if ($module) {
+                    Write-Host "Import-Module -Name $($module.Path) -Global"
+                    $module = Import-Module -Name $module.Path -Global -PassThru
+                    break
+                }
             }
         }
 
-        throw (Get-VstsLocString -Key AZ_ModuleNotFound)
+        # Throw if the module wasn't found.
+        if (!$module) {
+            throw (Get-VstsLocString -Key AZ_ModuleNotFound)
+        }
+
+        # Store and validate the imported version.
+        Write-Verbose "Imported module version: $($module.Version)"
+        $script:azureModuleVersion = $module.Version
+        $minimumVersion = [version]'0.8.10.1'
+        if ($script:azureModuleVersion -lt $minimumVersion) {
+            throw (Get-VstsLocString -Key AZ_RequiresMinVersion0 -ArgumentList $minimumVersion)
+        }
+
+        # Short-circuit if the Azure module was imported.
+        if ($module.Name -eq "Azure") {
+            return
+        }
+
+        # Validate the AzureRM.profile module can be found.
+        $profileModule = Get-Module -Name AzureRM.profile -ListAvailable |
+            Select-Object -First 1
+        if (!$profileModule) {
+            throw (Get-VstsLocString -Key AZ_AzureRMProfileModuleNotFound)
+        }
+
+        # Import the AzureRM.profile module.
+        Write-Host "Import-Module -Name $($profileModule.Path) -Global"
+        $profileModule = Import-Module -Name $profileModule.Path -Global -PassThru
+        Write-Verbose "Imported module version: $($profileModule.Version)"
     } finally {
         Trace-VstsLeavingInvocation $MyInvocation
     }
+}
+
+function Format-Splat {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $true)][hashtable]$Hashtable)
+
+    # Collect the parameters (names and values) in an array.
+    $parameters = foreach ($key in $Hashtable.Keys) {
+        $value = $Hashtable[$key]
+        # If the value is a bool, format the parameter as a switch (ending with ':').
+        if ($value -is [bool]) { "-$($key):" } else { "-$key" }
+        $value
+    }
+
+    $OFS = " "
+    "$parameters" # String join the array.
 }
