@@ -10,10 +10,10 @@
         $additional['Default'] = $true # The Default switch is required prior to 0.8.15.
     }
 
-    Write-Host "Select-AzureSubscription -SubscriptionId $SubscriptionId $(Format-Splat $additional)"
+    Write-Host "##[command]Select-AzureSubscription -SubscriptionId $SubscriptionId $(Format-Splat $additional)"
     $null = Select-AzureSubscription -SubscriptionId $SubscriptionId @additional
     if ($StorageAccount) {
-        Write-Host "Set-AzureSubscription -SubscriptionId $SubscriptionId -CurrentStorageAccountName $StorageAccount"
+        Write-Host "##[command]Set-AzureSubscription -SubscriptionId $SubscriptionId -CurrentStorageAccountName $StorageAccount"
         Set-AzureSubscription -SubscriptionId $SubscriptionId -CurrentStorageAccountName $StorageAccount
     }
 }
@@ -27,7 +27,7 @@ function Set-CurrentAzureRMSubscription {
 
     $additional = @{ }
     if ($TenantId) { $additional['TenantId'] = $TenantId }
-    Write-Host "Select-AzureRMSubscription -SubscriptionId $SubscriptionId $(Format-Splat $additional)"
+    Write-Host "##[command]Select-AzureRMSubscription -SubscriptionId $SubscriptionId $(Format-Splat $additional)"
     $null = Select-AzureRMSubscription -SubscriptionId $SubscriptionId @additional
 }
 
@@ -65,9 +65,8 @@ function Initialize-AzureSubscription {
             $additional['CurrentStorageAccountName'] = $StorageAccount
         }
 
-        Write-Host "Set-AzureSubscription -SubscriptionName $($Endpoint.Data.SubscriptionName) -SubscriptionId $($Endpoint.Data.SubscriptionId) -Certificate $certificate $(Format-Splat $additional)"
+        Write-Host "##[command]Set-AzureSubscription -SubscriptionName $($Endpoint.Data.SubscriptionName) -SubscriptionId $($Endpoint.Data.SubscriptionId) -Certificate ******** $(Format-Splat $additional)"
         Set-AzureSubscription -SubscriptionName $Endpoint.Data.SubscriptionName -SubscriptionId $Endpoint.Data.SubscriptionId -Certificate $certificate @additional
-        Write-Host "Set-CurrentAzureSubscription -SubscriptionId $($Endpoint.Data.SubscriptionId)"
         Set-CurrentAzureSubscription -SubscriptionId $Endpoint.Data.SubscriptionId
     } elseif ($Endpoint.Auth.Scheme -eq 'UserNamePassword') {
         $psCredential = New-Object System.Management.Automation.PSCredential(
@@ -75,7 +74,7 @@ function Initialize-AzureSubscription {
             (ConvertTo-SecureString $Endpoint.Auth.Parameters.Password -AsPlainText -Force))
         if (Get-Module -Name Azure) {
             try {
-                Write-Host "Add-AzureAccount -Credential $psCredential"
+                Write-Host "##[command]Add-AzureAccount -Credential $psCredential"
                 $null = Add-AzureAccount -Credential $psCredential
             } catch {
                 # Provide an additional, custom, credentials-related error message.
@@ -83,11 +82,10 @@ function Initialize-AzureSubscription {
                 throw (New-Object System.Exception((Get-VstsLocString -Key AZ_CredentialsError), $_.Exception))
             }
 
-            Write-Host "Set-CurrentAzureSubscription -SubscriptionId $($Endpoint.Data.SubscriptionId) -StorageAccount $StorageAccount"
             Set-CurrentAzureSubscription -SubscriptionId $Endpoint.Data.SubscriptionId -StorageAccount $StorageAccount
         } else {
             try {
-                Write-Host "Add-AzureRMAccount -Credential $psCredential"
+                Write-Host "##[command]Add-AzureRMAccount -Credential $psCredential"
                 $null = Add-AzureRMAccount -Credential $psCredential
             } catch {
                 # Provide an additional, custom, credentials-related error message.
@@ -95,7 +93,6 @@ function Initialize-AzureSubscription {
                 throw (New-Object System.Exception((Get-VstsLocString -Key AZ_CredentialsError), $_.Exception))
             }
 
-            Write-Host "Set-CurrentAzureRMSubscription -SubscriptionId $($Endpoint.Data.SubscriptionId)"
             Set-CurrentAzureRMSubscription -SubscriptionId $Endpoint.Data.SubscriptionId
         }
     } elseif ($Endpoint.Auth.Scheme -eq 'ServicePrincipal') {
@@ -105,7 +102,7 @@ function Initialize-AzureSubscription {
         if ($script:azureModuleVersion -lt ([version]'0.9.9')) {
             # Service principals arent supported from 0.9.9 and greater in the Azure module.
             try {
-                Write-Host "Add-AzureAccount -ServicePrincipal -Tenant $($Endpoint.Auth.Parameters.TenantId) -Credential $psCredential"
+                Write-Host "##[command]Add-AzureAccount -ServicePrincipal -Tenant $($Endpoint.Auth.Parameters.TenantId) -Credential $psCredential"
                 $null = Add-AzureAccount -ServicePrincipal -Tenant $Endpoint.Auth.Parameters.TenantId -Credential $psCredential
             } catch {
                 # Provide an additional, custom, credentials-related error message.
@@ -113,7 +110,6 @@ function Initialize-AzureSubscription {
                 throw (New-Object System.Exception((Get-VstsLocString -Key AZ_ServicePrincipalError), $_.Exception))
             }
 
-            Write-Host "Set-CurrentAzureSubscription -SubscriptionId $($Endpoint.Data.SubscriptionId) -StorageAccount $StorageAccount"
             Set-CurrentAzureSubscription -SubscriptionId $Endpoint.Data.SubscriptionId -StorageAccount $StorageAccount
         } elseif (!(Get-module -Name AzureRM)) {
             # Throw if >=0.9.9 Azure.
@@ -121,7 +117,7 @@ function Initialize-AzureSubscription {
         } else {
             # Else, this is AzureRM.
             try {
-                Write-Host "Add-AzureRMAccount -ServicePrincipal -Tenant $($Endpoint.Auth.Parameters.TenantId) -Credential $psCredential"
+                Write-Host "##[command]Add-AzureRMAccount -ServicePrincipal -Tenant $($Endpoint.Auth.Parameters.TenantId) -Credential $psCredential"
                 $null = Add-AzureRMAccount -ServicePrincipal -Tenant $Endpoint.Auth.Parameters.TenantId -Credential $psCredential
             } catch {
                 # Provide an additional, custom, credentials-related error message.
@@ -129,7 +125,6 @@ function Initialize-AzureSubscription {
                 throw (New-Object System.Exception((Get-VstsLocString -Key AZ_ServicePrincipalError), $_.Exception))
             }
 
-            Write-Host "Set-CurrentAzureRMSubscription -SubscriptionId $($Endpoint.Data.SubscriptionId) -TenantId $($Endpoint.Auth.Parameters.TenantId)"
             Set-CurrentAzureRMSubscription -SubscriptionId $Endpoint.Data.SubscriptionId -TenantId $Endpoint.Auth.Parameters.TenantId
         }
     } else {
@@ -149,7 +144,7 @@ function Import-AzureModule {
             if (!$programFiles) { continue }
             $path = [System.IO.Path]::Combine($programFiles, "Microsoft SDKs\Azure\PowerShell\ServiceManagement\Azure\Azure.psd1")
             if (Test-Path -LiteralPath $path -PathType Leaf) {
-                Write-Host "Import-Module -Name $path -Global"
+                Write-Host "##[command]Import-Module -Name $path -Global"
                 $module = Import-Module -Name $path -Global -PassThru
                 break
             }
@@ -161,7 +156,7 @@ function Import-AzureModule {
                 $module = Get-Module -Name $name -ListAvailable |
                     Select-Object -First 1
                 if ($module) {
-                    Write-Host "Import-Module -Name $($module.Path) -Global"
+                    Write-Host "##[command]Import-Module -Name $($module.Path) -Global"
                     $module = Import-Module -Name $module.Path -Global -PassThru
                     break
                 }
@@ -194,7 +189,7 @@ function Import-AzureModule {
         }
 
         # Import the AzureRM.profile module.
-        Write-Host "Import-Module -Name $($profileModule.Path) -Global"
+        Write-Host "##[command]Import-Module -Name $($profileModule.Path) -Global"
         $profileModule = Import-Module -Name $profileModule.Path -Global -PassThru
         Write-Verbose "Imported module version: $($profileModule.Version)"
     } finally {
