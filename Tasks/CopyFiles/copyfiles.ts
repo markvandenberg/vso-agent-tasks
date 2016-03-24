@@ -82,6 +82,7 @@ var contents: string[] = tl.getDelimitedInput('Contents', '\n', true);
 var sourceFolder: string = tl.getPathInput('SourceFolder', true, true);
 var targetFolder: string = tl.getPathInput('TargetFolder', true);
 
+var flatCopy: boolean = tl.getBoolInput('FlatCopy', false);
 var cleanTargetFolder: boolean = tl.getBoolInput('CleanTargetFolder', false);
 var overWrite: boolean = tl.getBoolInput('OverWrite', false);
 
@@ -226,14 +227,19 @@ if (files.length > 0) {
             }
             
             var targetPath = path.join(targetFolder, relativePath);
-            var targetDir = path.dirname(targetPath);
-                           
-            if (!createdFolders[targetDir]) {
-                tl.debug("Creating folder " + targetDir);
-                tl.mkdirP(targetDir);
-                createdFolders[targetDir] = true;
+            
+            if (flatCopy) {
+                targetPath = path.join(targetFolder, path.basename(relativePath));
             }
-
+            else {
+                var targetDir = path.dirname(targetPath);
+                if (!createdFolders[targetDir]) {
+                    tl.debug("Creating folder " + targetDir);
+                    tl.mkdirP(targetDir);
+                    createdFolders[targetDir] = true;
+                }
+            }
+            
             if (tl.exist(targetPath) && tl.stats(targetPath).isFile() && !overWrite) {
                 console.log(tl.loc('FileAlreadyExistAt', file, targetPath));
             }
