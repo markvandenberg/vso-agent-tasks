@@ -10,6 +10,8 @@
   "loc.input.help.Contents": "File paths to include as part of the copy. Supports multiple lines of minimatch patterns. [More Information](http://go.microsoft.com/fwlink/?LinkID=708389)",
   "loc.input.label.TargetFolder": "Target Folder",
   "loc.input.help.TargetFolder": "Target folder files will copy to. Use [variables](http://go.microsoft.com/fwlink/?LinkID=550988). Example: $(build.artifactstagingdirectory)",
+  "loc.input.label.FlatCopy": "Use Flat Copy",
+  "loc.input.help.FlatCopy": "Copy Contents in the root of TargetFolder",
   "loc.input.label.CleanTargetFolder": "Clean Target Folder",
   "loc.input.help.CleanTargetFolder": "Delete all existing files in target folder before copy",
   "loc.input.label.OverWrite": "Over Write",
