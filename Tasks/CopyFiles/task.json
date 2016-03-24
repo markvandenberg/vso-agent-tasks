@@ -49,6 +49,14 @@
             "helpMarkDown": "Target folder files will copy to. Use [variables](http://go.microsoft.com/fwlink/?LinkID=550988). Example: $(build.artifactstagingdirectory)"
         },
         {
+            "name": "FlatCopy",
+            "type": "boolean",
+            "label": "Use Flat Copy",
+            "defaultValue": "false",
+            "required": false,
+            "helpMarkDown": "Copy Contents in the root of TargetFolder",
+            "groupName": "advanced"
+        },{
             "name": "CleanTargetFolder",
             "type": "boolean",
             "label": "Clean Target Folder",
